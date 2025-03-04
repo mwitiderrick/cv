@@ -1,0 +1,21 @@
+{
+    "manifest_version": 3,
+    "name": "Job Application Helper",
+    "version": "1.0",
+    "description": "Extract job descriptions and generate CVs & cover letters using AI.",
+    "permissions": ["storage", "scripting"],
+    "host_permissions": ["<all_urls>", "https://api.openai.com/*",  "https://automators.cc/*"],
+    "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+    "content_scripts": [
+      {
+        "matches": ["<all_urls>"],
+        "js": ["content.js", "scripts/readability.js"],
+        "css": ["styles.css"]
+      }
+    ]
+    
+  }
+  
