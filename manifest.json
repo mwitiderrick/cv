@@ -3,7 +3,7 @@
     "name": "Job Application Helper",
     "version": "1.0",
     "description": "Extract job descriptions and generate CVs & cover letters using AI.",
-    "permissions": ["storage", "scripting"],
+    "permissions": ["storage", "clipboardWrite"],
     "host_permissions": ["<all_urls>", "https://api.openai.com/*",  "https://automators.cc/*"],
     "background": {
     "service_worker": "background.js",
@@ -15,7 +15,20 @@
         "js": ["content.js", "scripts/readability.js"],
         "css": ["styles.css"]
       }
-    ]
+    ],
+    "icons": {
+        "16": "icons/icon.png",
+        "48": "icons/icon.png",
+        "128": "icons/icon.png"
+    },
+    "action": {
+        "default_icon": {
+            "16": "icons/icon.png",
+            "48": "icons/icon.png",
+            "128": "icons/icon.png"
+        },
+        "default_title": "Job Application Helper"
+    }
     
   }
   

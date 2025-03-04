@@ -3,7 +3,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     if (request.action === "extractPDF") {
         console.log("🔍 Processing PDF...");
-        
+
         extractPDFText(request.fileData)
             .then(text => {
                 console.log("✅ Extracted PDF Text:", text);
@@ -92,8 +92,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
                     let result = await response.json();
                     if (result.success) {
-                        console.log("✅ Extracted PDF Text:", result.text);
-                        sendResponse({ success: true, text: result.text.trim() });
+                        // ✅ Store the extracted CV text in Chrome storage
+                        chrome.storage.local.set({ cvText: result.text }, () => {
+                            if (chrome.runtime.lastError) {
+                                console.error("❌ Error storing CV text:", chrome.runtime.lastError.message);
+                            } else {
+                                console.log("✅ CV text stored successfully in Chrome storage.");
+                            }
+                        }); sendResponse({ success: true, text: result.text.trim() });
                     } else {
                         throw new Error(result.error || "⚠️ Failed to extract text from PDF.");
                     }
@@ -111,73 +117,40 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-
-
-
-
-
-// Listen for messages from content.js
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === "storeCV") {
-        chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-            if (request.action === "storeCV") {
-                chrome.storage.local.set({ cvData: request.cvData }, () => {
-                    sendResponse({ status: "✅ CV text stored successfully!" });
-                });
-                return true;
-            }
-        
-            if (request.action === "getCV") {
-                chrome.storage.local.get("cvData", (data) => {
-                    sendResponse({ cvText: data.cvData || "⚠️ No CV stored yet." });
-                });
-                return true;
-            }
-        });
-        
-        return true;
-    }
-
-    else if (request.action === "storeAPIKey") {
-        chrome.storage.local.set({ apiKey: request.apiKey }, () => {
-            sendResponse({ status: "✅ API Key saved!" });
-        });
-        return true;
-    }
-
-    else if (request.action === "generateCoverLetter" || request.action === "updateCV") {
-        generateOpenAIResponse(request, sendResponse);
-        return true;
-    }
-});
-
-
-async function generateOpenAIResponse(request, sendResponse) {
-    chrome.storage.local.get(["cvData", "apiKey"], async (data) => {
+async function processOpenAIRequest(action, cvText, jobDescription, sendResponse) {
+    chrome.storage.local.get(["apiKey"], async (data) => {
         if (!data.apiKey) {
-            sendResponse({ error: "⚠️ OpenAI API Key is missing! Please add it in Settings." });
             console.error("❌ Missing OpenAI API Key");
+            sendResponse({ error: "⚠️ OpenAI API Key is missing! Please add it in Settings." });
             return;
         }
 
-        if (!data.cvData) {
-            sendResponse({ error: "⚠️ No CV uploaded. Please upload your CV first." });
-            console.error("❌ No CV found in storage");
+        if (!cvText) {
+            console.error("❌ No CV found in request");
+            sendResponse({ error: "⚠️ No CV text found. Please upload your CV first." });
             return;
         }
 
-        console.log("✅ Using OpenAI API Key:", data.apiKey); // Debug API key
+        if (!jobDescription) {
+            console.error("❌ No Job Description found in request");
+            sendResponse({ error: "⚠️ No Job Description provided. Please enter a job description." });
+            return;
+        }
+
+        console.log(`📨 Processing OpenAI Request for ${action}...`);
+        console.log("📄 CV Text Length:", cvText.length);
+        console.log("📝 Job Description:", jobDescription);
 
         let prompt = "";
-        if (request.action === "generateCoverLetter") {
-            prompt = `I am applying for this job:\n\n${request.jobDescription}\n\nHere is my CV:\n${data.cvData}\n\nGenerate a professional and well-structured cover letter tailored to this job.`;
-            console.log(data.cvData);
-        } else if (request.action === "updateCV") {
-            prompt = `Modify my CV to better align with the following job description:\n\n${request.jobDescription}\n\nCurrent CV:\n${data.cvData}\n\nEnsure clarity, professionalism, and relevance.`;
+
+        if (action === "generateCoverLetter") {
+            prompt = `I am applying for this job:\n\n${jobDescription}\n\nHere is my CV:\n${cvText}\n\nGenerate a professional and well-structured cover letter tailored to this job.`;
+            console.log(prompt);
+        } else if (action === "updateCV") {
+            prompt = `Modify my CV to better align with the following job description:\n\n${jobDescription}\n\nCurrent CV:\n${cvText}\n\nEnsure clarity, professionalism, and relevance.`;
+            console.log(prompt);
         }
 
-        console.log("📨 Sending request to OpenAI...");
-        
         try {
             let response = await fetch("https://api.openai.com/v1/chat/completions", {
                 method: "POST",
@@ -186,21 +159,21 @@ async function generateOpenAIResponse(request, sendResponse) {
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                    model: "gpt-4o-2024-08-06",
+                    model: "gpt-4",
                     messages: [{ role: "user", content: prompt }],
                     temperature: 0.7
                 })
             });
 
             let responseData = await response.json();
-            
+
             if (responseData.error) {
                 console.error("❌ OpenAI API Error:", responseData.error.message);
                 sendResponse({ error: `⚠️ OpenAI API Error: ${responseData.error.message}` });
                 return;
             }
 
-            console.log("✅ OpenAI Response Received:", responseData);
+            console.log(`✅ OpenAI Response Received for ${action}:`, responseData);
 
             sendResponse({ result: responseData.choices[0]?.message?.content.trim() || "⚠️ OpenAI response error." });
 
@@ -210,4 +183,16 @@ async function generateOpenAIResponse(request, sendResponse) {
         }
     });
 }
+
+// ✅ Listen for messages from content.js
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === "generateCoverLetter" || request.action === "updateCV") {
+        console.log(`📩 Received request to ${request.action}.`);
+
+        processOpenAIRequest(request.action, request.cvText, request.jobDescription, sendResponse);
+
+        return true; // ✅ Keeps the message channel open for async operations
+    }
+});
+
 

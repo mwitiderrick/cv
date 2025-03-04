@@ -27,6 +27,8 @@
                     <textarea id="job-description" placeholder="Job description appears here..."></textarea>
                     <button id="generate-cover">Generate Cover Letter</button>
                     <button id="update-cv">Update CV</button>
+                    <button id="copy-text" class="btn-secondary">Copy</button>
+
                 </div>
             <div id="upload" class="tab-pane">
                 <input type="file" id="cv-upload" accept=".pdf,.txt,.docx">
@@ -112,10 +114,8 @@
                         return;
                     }
     
-                    console.log("📨 Received response from background.js:", response);
     
                     if (response.success) {
-                        console.log("✅ Extracted CV Text:", response.text);
                         document.getElementById("cv-text").value = response.text;
                     } else {
                         alert(response.error || "⚠️ Failed to extract CV text.");
@@ -131,25 +131,7 @@
         reader.readAsArrayBuffer(file);
     });
     
-    
-    
-    
 
-    // Store extracted CV text in Chrome storage
-    function storeCVText(cvText) {
-        if (!cvText || cvText.length < 50) {
-            alert("⚠️ CV text is too short or empty. Please check your file.");
-            return;
-        }
-
-        chrome.storage.local.set({ cvData: cvText }, () => {
-            alert("✅ CV stored successfully!");
-        });
-    }
-
-    // Function to extract text from a PDF using pdf.js
-   // Function to extract text from a PDF using the worker
-// Function to extract text from a PDF by sending it to background.js
 async function extractPDFText(pdfFile) {
     return new Promise((resolve, reject) => {
         let reader = new FileReader();
@@ -237,67 +219,78 @@ async function extractPDFText(pdfFile) {
     });
 
 })();
-// Ensure Generate Cover Letter button works
-document.getElementById("generate-cover").addEventListener("click", async () => {
-    let jobDesc = document.getElementById("job-description").value.trim();
 
-    if (!jobDesc) {
-        alert("⚠️ Please extract a job description first!");
+async function sendOpenAIRequest(action) {
+    let jobDescription = document.getElementById("job-description").value.trim(); // ✅ Store before modifying UI
+
+    if (!jobDescription) {
+        alert("⚠️ No job description found. Please enter a job description.");
         return;
     }
 
-    document.getElementById("job-description").value = "⏳ Generating Cover Letter...";
+    document.getElementById("job-description").value = `⏳ Generating ${action === "generateCoverLetter" ? "cover letter" : "updated CV"}...`;
 
-    chrome.runtime.sendMessage(
-        { action: "generateCoverLetter", jobDescription: jobDesc },
-        (response) => {
-            if (chrome.runtime.lastError) {
-                console.error("Error communicating with background script:", chrome.runtime.lastError.message);
-                alert("⚠️ OpenAI API error. Please check your API key.");
-                document.getElementById("job-description").value = "";
-                return;
-            }
-
-            if (response.error) {
-                alert(response.error);
-                document.getElementById("job-description").value = "";
-                return;
-            }
-
-            document.getElementById("job-description").value = response.result;
+    chrome.storage.local.get(["cvText"], async (result) => {
+        if (chrome.runtime.lastError) {
+            console.error("❌ Error retrieving storage data:", chrome.runtime.lastError.message);
+            alert("⚠️ Error retrieving storage data.");
+            return;
         }
-    );
-});
 
-// Ensure Update CV button works
-document.getElementById("update-cv").addEventListener("click", async () => {
-    let jobDesc = document.getElementById("job-description").value.trim();
+        let cvText = result.cvText;
 
-    if (!jobDesc) {
-        alert("⚠️ Please extract a job description first!");
+        if (!cvText) {
+            alert("⚠️ No CV text found. Please upload your CV first.");
+            return;
+        }
+
+        console.log(`📨 Sending request to background.js for ${action}...`);
+        
+
+        // ✅ Send message to background.js
+        chrome.runtime.sendMessage({ action, cvText, jobDescription }, (response) => {
+            if (chrome.runtime.lastError) {
+                console.error("❌ Error communicating with background script:", chrome.runtime.lastError.message);
+                alert("⚠️ Error contacting background script.");
+                return;
+            }
+
+
+            if (response.result) {
+                console.log(`✅ Generated ${action === "generateCoverLetter" ? "Cover Letter" : "Updated CV"}:`, response.result);
+                document.getElementById("job-description").value = response.result;
+            } else {
+                alert(response.error || `⚠️ Failed to ${action === "generateCoverLetter" ? "generate cover letter" : "update CV"}.`);
+            }
+        });
+    });
+}
+
+// ✅ Event listeners for both actions
+document.getElementById("generate-cover").addEventListener("click", () => sendOpenAIRequest("generateCoverLetter"));
+document.getElementById("update-cv").addEventListener("click", () => sendOpenAIRequest("updateCV"));
+
+
+
+
+
+
+document.getElementById("copy-text").addEventListener("click", () => {
+    let textArea = document.getElementById("job-description");
+
+    if (!textArea.value.trim()) {
+        alert("⚠️ No text to copy.");
         return;
     }
 
-    document.getElementById("job-description").value = "⏳ Updating CV...";
-
-    chrome.runtime.sendMessage(
-        { action: "updateCV", jobDescription: jobDesc },
-        (response) => {
-            if (chrome.runtime.lastError) {
-                console.error("Error communicating with background script:", chrome.runtime.lastError.message);
-                alert("⚠️ OpenAI API error. Please check your API key.");
-                document.getElementById("job-description").value = "";
-                return;
-            }
-
-            if (response.error) {
-                alert(response.error);
-                document.getElementById("job-description").value = "";
-                return;
-            }
-
-            document.getElementById("job-description").value = response.result;
-            alert("✅ CV updated successfully!");
-        }
-    );
+    // ✅ Copy text to clipboard
+    navigator.clipboard.writeText(textArea.value)
+        .then(() => {
+            console.log("✅ Text copied to clipboard.");
+            alert("✅ Text copied!");
+        })
+        .catch((err) => {
+            console.error("❌ Failed to copy text:", err);
+            alert("⚠️ Error copying text.");
+        });
 });
